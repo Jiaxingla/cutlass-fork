@@ -112,7 +112,11 @@ cast_smem_ptr_to_uint(void const* const ptr)
 
   return __nvvm_get_smem_pointer(ptr);
 
-#elif defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
+#elif defined(CUTLASS_ENABLE_SYCL)
+
+    return (intptr_t)(__attribute__((opencl_local)) void const *)ptr;
+
+#elif defined(__CUDA_ARCH__)
 
   uint32_t smem_ptr;
 
