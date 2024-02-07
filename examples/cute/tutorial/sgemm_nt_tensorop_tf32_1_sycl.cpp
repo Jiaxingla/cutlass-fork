@@ -93,20 +93,20 @@ template <class MShape, class NShape, class KShape,
           class TB, class BStride,
           class TC, class CStride,
           class Alpha, class Beta>
-static void
+[[clang::always_inline]]
+void
 gemm_device(MShape M, NShape N, KShape K,
             TA const* A, AStride dA,
             TB const* B, BStride dB,
             TC      * C, CStride dC,
-            Alpha alpha, Beta beta,
-            char* smem)
+            Alpha alpha, Beta beta)
 {
   using namespace cute;
   using X = Underscore;
 
   // Shared memory buffers
-  tfloat32_t* smemA = reinterpret_cast<tfloat32_t*>(smem);
-  tfloat32_t* smemB = smemA + cosize_v<SmemLayoutA>;
+  auto smemA = *(sycl::ext::oneapi::group_local_memory_for_overwrite<tfloat32_t[cosize_v<SmemLayoutA>]>(syclcompat::this_nd_item<1>().get_group()));
+  auto smemB = *(sycl::ext::oneapi::group_local_memory_for_overwrite<tfloat32_t[cosize_v<SmemLayoutB>]>(syclcompat::this_nd_item<1>().get_group()));
   auto sA = make_tensor(make_smem_ptr(smemA), SmemLayoutA{});               // (BLK_M,BLK_K)
   auto sB = make_tensor(make_smem_ptr(smemB), SmemLayoutB{});               // (BLK_N,BLK_K)
 
@@ -241,12 +241,12 @@ gemm(sycl::queue q, int m, int n, int k,
   const auto grid = syclcompat::dim3(ceil_div(size(M), size(bM)),
                                      ceil_div(size(N), size(bN)));
 
-    const int smem_size = (cosize_v<SmemLayoutA> + cosize_v<SmemLayoutA>) * sizeof(tfloat32_t);
+//    const int smem_size = (cosize_v<SmemLayoutA> + cosize_v<SmemLayoutA>) * sizeof(tfloat32_t);
 
     syclcompat::launch<
             gemm_device<int, int, int, TA, decltype(dA), TB, decltype(dB),
                     TC, decltype(dC), Alpha, Beta>
-    >(grid, block, smem_size, q, M,  N,  K, A, dA, B, dB, C, dC, alpha, beta);
+    >(grid, block, q, M,  N,  K, A, dA, B, dB, C, dC, alpha, beta);
 }
 
 void test_gemm(int m, int n, int k)
