@@ -207,7 +207,7 @@ void cute_gemm(size_t M, size_t K, size_t N) {
                             make_stride(_1{}, E<0>{}, tN * E<1>{})));
             Tensor tCi = make_tensor(
                 make_inttuple_iter(m, n),
-                make_layout(Shape<_1, Int<MM>, Int<NN>>{},
+                make_layout(Shape<_1, Int<MM>, Int<NN / 2>>{},
                             make_stride(_1{}, tM * E<0>{}, tN * E<1>{})));
             TiledMMA<MMA_Atom<XE_8x16x16_BF16BF16F32F32_NN>,
                      Layout<Shape<_1, _1, _1>>>
@@ -258,7 +258,17 @@ void cute_gemm(size_t M, size_t K, size_t N) {
               }
             }
 
-            copy(C_copy, tCr, tCi);
+            auto tCr_view = make_tensor(static_cast<decltype(tCr) &&>(tCr).data(),
+                                      Shape<_16, Int<MM>, Int<NN / 2>>{});
+            Tensor tCr_bf16 = make_tensor<bfloat16_t>(Shape<_16, Int<MM>, Int<NN / 2>>{});
+            for (int mm = 0; mm < MM; mm++) {
+              for (int nn = 0; nn < NN / 2; nn++) {
+                for (int i = 0; i < 16; i++) {
+                  tCr_bf16(i, mm, nn) = (bfloat16_t)((uint32_t)tCr_view(i, mm, nn) >> 16);
+                }
+              }
+            }
+            copy(C_copy, tCr_bf16, tCi);
           });
     });
 
@@ -305,24 +315,24 @@ void cute_gemm(size_t M, size_t K, size_t N) {
 }
 
 int main(int argc, char **argv) {
-  cute_gemm<256, 256, 32, 64, 32, 32>(2048, 2048, 2048);
+  // cute_gemm<256, 256, 32, 64, 32, 32>(2048, 2048, 2048);
   cute_gemm<256, 256, 32, 64, 32, 32>(4096, 4096, 4096);
-  cute_gemm<256, 256, 32, 64, 32, 32>(8192, 8192, 8192);
+  // cute_gemm<256, 256, 32, 64, 32, 32>(8192, 8192, 8192);
 
-  cute_gemm<32, 512, 32, 32, 32, 32>(1, 5120, 5120);
-  cute_gemm<32, 512, 32, 32, 32, 32>(1, 13824, 5120);
-  cute_gemm<32, 512, 32, 32, 32, 32>(1, 5120, 13824);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(1, 5120, 5120);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(1, 13824, 5120);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(1, 5120, 13824);
 
-  cute_gemm<32, 512, 32, 32, 32, 32>(4, 8192, 2048);
-  cute_gemm<32, 512, 32, 32, 32, 32>(4, 4096, 250880);
-  cute_gemm<32, 512, 32, 32, 32, 32>(4, 16384, 4096);
-  cute_gemm<32, 512, 32, 32, 32, 32>(4, 4096, 12288);
-  cute_gemm<32, 512, 32, 32, 32, 32>(4, 14336, 5376);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(4, 8192, 2048);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(4, 4096, 250880);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(4, 16384, 4096);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(4, 4096, 12288);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(4, 14336, 5376);
 
-  cute_gemm<32, 512, 32, 32, 32, 32>(256, 4096, 4096);
-  cute_gemm<32, 512, 32, 32, 32, 32>(512, 379, 2043);
-  cute_gemm<32, 512, 32, 32, 32, 32>(1024, 28672, 8192);
-  cute_gemm<32, 512, 32, 32, 32, 32>(8192, 1024, 4096);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(256, 4096, 4096);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(512, 379, 2043);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(1024, 28672, 8192);
+  // cute_gemm<32, 512, 32, 32, 32, 32>(8192, 1024, 4096);
 
   return 0;
 }

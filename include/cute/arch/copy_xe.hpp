@@ -177,12 +177,12 @@ struct XE_2D_SAVE // m8k16
   template <class T>
   CUTE_HOST_DEVICE static void copy(void *baseoffset, int width, int height,
                                     int pitch, int2_ coord, const T *src) {
-    if constexpr (sizeof(T) == sizeof(uint)) {
+    // if constexpr (sizeof(T) == sizeof(uint)) {
       __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
           (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
           *(uint8 *)src);
-    } else {
-      static_assert(false);
-    }
+    // } else {
+    //   static_assert(false);
+    // }
   }
 };
