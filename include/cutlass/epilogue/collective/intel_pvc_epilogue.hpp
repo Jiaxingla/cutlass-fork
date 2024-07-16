@@ -56,7 +56,6 @@ namespace collective {
 
 template <
   class CtaTileMNK_, 
-  class EpilogueTile_, 
   class ElementC_,
   class StrideC_,
   class ElementD_,
@@ -72,7 +71,6 @@ template <
 class CollectiveEpilogue<
     IntelPVCEpilogue,
     CtaTileMNK_,
-    EpilogueTile_,
     ElementC_,
     StrideC_,
     ElementD_,
@@ -91,7 +89,6 @@ public:
   //
   using DispatchPolicy = IntelPVCEpilogue;
   using CtaTileMNK = CtaTileMNK_;
-  using EpilogueTile = EpilogueTile_;
   using FusionCallbacks = FusionCallbacks_;
   using ElementC = ElementC_;
   using ElementAccumulator = ElementC_;
@@ -113,11 +110,7 @@ public:
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
-  static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
-  static_assert(cute::rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
-  //static_assert(size<0>(CtaTileMNK{}) % size<0>(shape(EpilogueTile{})) == 0, "EPI_TILE_M must divide CTA_M");
-  //static_assert(size<1>(CtaTileMNK{}) % size<1>(shape(EpilogueTile{})) == 0, "EPI_TILE_N must divide CTA_N");
   static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
   static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
 
@@ -262,15 +255,13 @@ public:
     (void) smem;
     using namespace cute;
 
-    using DpasShape = typename TiledMma::Shape_MNK;
+    using MmaAtomShape = typename TiledMma::AtomShape_MNK;
+    using SubgroupTileShape = decltype(tile_shape(TiledMma()));
 
-    static constexpr int DpasM = get<0>(DpasShape()); // rows per dpas operation per sub_group for Matrix A
-    static constexpr int DpasN = get<1>(DpasShape()); // cols per dpas operation per sub_group for Matrix B
+    static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
+    static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
 
-    static constexpr int FragsM = get<0>(EpilogueTile{}) / DpasM; // A frags per sub_group
-    static constexpr int FragsN = get<1>(EpilogueTile{}) / DpasN; // B frags per sub_group
-
-    static constexpr int FragmentSize = (DpasN * DpasM) / SubgroupSize;
+    static constexpr int FragmentSize = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
 
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
@@ -280,13 +271,14 @@ public:
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
-    Tensor tOuti = params.xe_store_d.get_pvc_tensor(make_coord(m_coord, n_coord, 0),
-                                                  make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
-                                                  make_stride(Int<DpasM>{}, Int<DpasN>{}));
+    Tensor tOuti = params.xe_store_d.get_pvc_tensor(
+            make_coord(m_coord, n_coord, 0),
+            make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
+            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}));
 
     Tensor rw_coord = tOuti(_,_,_,l_coord);
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));
-    Tensor cD = local_tile(mD_crd, take<0,2>(TileShapeMNK{}), make_coord(m_coord, n_coord));
+    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));
     // Get the fusion callbacks
     constexpr bool RefSrc = true;
     auto residue_mn = make_coord(M, N);
@@ -295,7 +287,7 @@ public:
                       TileShapeMNK{},
                       tile_coord_mnkl,
                       residue_mn,
-                      EpilogueTile{},
+                      SubgroupTileShape{},
                       params.xe_load_c,
                       thread_idx,
                       cD,
